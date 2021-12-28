@@ -124,3 +124,13 @@ dmypy.json
 /data
 .vscode
 *ckpt*
+
+# models
+*.tar
+*.pt
+
+# temp folder
+event/
+
+# log
+log.txt

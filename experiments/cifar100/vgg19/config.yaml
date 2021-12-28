@@ -19,6 +19,11 @@ test_batch: 200
 eval_freq: 2
 workers: 4
 
+
+#ratio
+ratio: 1.0
+rate: 1.0
+
 # optimizer
 optimize:
   momentum: 0.9

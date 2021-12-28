@@ -2,9 +2,6 @@
 
 <img src="https://user-images.githubusercontent.com/7837172/44953557-0fb54e80-aec9-11e8-9d38-2388bc70c5c5.png" width=15% align="right" /> 
 
-Status: **Archive** ( Final test with **PyTorch 1.7** and no longer maintained, I would recommend you to use [pycls](https://github.com/facebookresearch/pycls) powered by [FAIR](https://github.com/facebookresearch), which is a simple and flexible codebase for image classification )
-
-
 This repository contains the pytorch code for multiple CNN architectures and improve methods based on the following papers, **hope the implementation and results will helpful for your research**!!
 
 - Architecure
@@ -59,9 +56,6 @@ CUDA_VISIBLE_DEVICES=0,1 python -u train.py --work-path ./experiments/cifar10/pr
 
 ## 4 GPUs for densenet190bc
 CUDA_VISIBLE_DEVICES=0,1,2,3 python -u train.py --work-path ./experiments/cifar10/densenet190bc
-
-## 1 GPU for vgg19 inference
-CUDA_VISIBLE_DEVICES=0 python -u eval.py --work-path ./experiments/cifar10/vgg19
 ``` 
 
 We use yaml file ``config.yaml`` to save the parameters, check any files in `./experimets` for more details.  
