@@ -510,14 +510,13 @@ def train(train_loader, net, criterion, optimizer, epoch, device, cut_ratio=0.8,
                 inputs, targets, config.mixup_alpha, device)
 
             epm = np.exp( min( (epoch+batch_index/loader_length) * 3., 10 ) )
-            #ddecay = torch.pow(mydecay, epm)
+            ddecay = torch.pow(mydecay, epm)
 
             outputs = net(inputs, epoch=epoch-last_cut, batch_ind=batch_index/loader_length)
             loss = mixup_criterion(
                 criterion, outputs, targets_a, targets_b, lam)
         else:
             epm = np.exp( min( (epoch+batch_index/loader_length) * 5., 15 ) )
-            global ddecay
             ddecay = torch.pow(mydecay, epm) * 0.0
             #print(ddecay, "JJJJJJJJJ")
             outputs = net(inputs, epoch=epoch-last_cut, batch_ind=batch_index/loader_length, hook_flag=hook_flag)
@@ -606,27 +605,16 @@ total_flops = 0
 tpara = 0
 tflops = 0
 
-
-def prior(net, layers, ratio=0.8):
-    layer_num = 0
-    for name1, item1 in net.named_parameters():
-         if item1.dim() > 1:
-             layer_num += 1
-             rr = ratio * (1.0 - 1 * math.pow((layer_num-layers/1.5)/layers, 2 ))
-             cut_ratio.append(rr)
-
-            
-
 def norm_pca(net):
     global total_para
     global total_flops
     global tpara
     global tflops
-    pca = PCA(.9)
+    pca = PCA(.98)
     for name1, item1 in net.named_parameters():
          if item1.dim() > 1:
              weight = item1.view(item1.size(0), -1)
-             #weight = weight / torch.norm(weight, p=2, dim=1, keepdim=True)
+             weight = weight / torch.norm(weight, p=2, dim=1, keepdim=True)
              weight = weight.detach().cpu().numpy()
              pca.fit(weight)
 
@@ -653,11 +641,10 @@ def main():
     logger.info(config)
     
     ##这里不影响最终的裁剪率，因为最后其对应的输入会被减掉，这里这是为了刚开始是能尽量保留较多的梯度信息
-    #config.rate = [1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1. ]
-    #config.ratio = list(1.0-np.power(np.array([0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, .4, .2]), 1.0/1) )
+    config.rate = [1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1. ]
+    config.ratio = list(1.0 - np.ones((56)) * 0.45 )
 
-    config.rate = list( np.ones((156)) )
-    config.ratio = list(1.0 - np.ones((156)) * 0.36 )
+    #config.rate = list( np.ones((55)) )
     #config.ratio = list(1.0 - np.power(np.array([0.1, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.0, 0.0, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.4, 0.4, 0.4, 0.1, 0.4, 0.1, 0.4, 0.1, 0.4, 0.1, 0.4]), 1.0/1) )
     #config.rate = list( np.ones((109)) )
     #config.ratio = list( 1.0 - np.array([0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.2]) )
@@ -687,7 +674,7 @@ def main():
     if args.work_path:
         ckpt_file_name = args.work_path + '/' + config.ckpt_name + '.pth.tar'
         if args.resume:
-            ckpt_file_name = '/home/biolab/Desktop/QSM/PRUN/FilterSketch/resnet_110.pt'
+            ckpt_file_name = '/home/biolab/Desktop/QSM/PRUN/FilterSketch/vgg_16_bn.pt'
 
             pruned_checkpoint = torch.load(ckpt_file_name, map_location='cuda:0')
             from collections import OrderedDict
@@ -722,70 +709,8 @@ def main():
     #net = torch.nn.DataParallel(net, device_ids=device_ids)
 
     #norm_pca(net)
-
-    #prior(net,110, 0.7)
     #print(tpara / total_para, tflops / total_flops, "OOOOOOOOOOOOOOOOOOOOOOOO")
-
     #config.ratio = cut_ratio
-    for rr in config.ratio:
-        print("["+str(rr)+']+', end='')
-
-    #net = get_model(config)
-
-    #logger.info(net)
-    logger.info(" == total parameters: " + str(count_parameters(net)))
-
-    # CPU or GPU
-    device = 'cuda' if config.use_gpu else 'cpu'
-    # data parallel for multiple-GPU
-    if device == 'cuda':
-        #net = torch.nn.DataParallel(net)
-        cudnn.benchmark = True
-
-    #net.to(device)
-    # define loss and optimizer
-    criterion = nn.CrossEntropyLoss()
-    
-    # resume from a checkpoint
-    last_epoch = -1
-    best_prec = 0
-    if args.work_path:
-        ckpt_file_name = args.work_path + '/' + config.ckpt_name + '.pth.tar'
-        if args.resume:
-            ckpt_file_name = '/home/biolab/Desktop/QSM/PRUN/FilterSketch/resnet_110.pt'
-
-            pruned_checkpoint = torch.load(ckpt_file_name, map_location='cuda:0')
-            from collections import OrderedDict
-            new_state_dict = OrderedDict()
-
-            if False:
-                tmp_ckpt = pruned_checkpoint
-            else:
-                tmp_ckpt = pruned_checkpoint['state_dict']
-            
-            unsed = []
-            for k, v in tmp_ckpt.items():
-                new_state_dict[k.replace('module.', '')] = v
-                unsed.append(k.replace('module.', ''))
-            
-            net_state_dict = net.state_dict()
-            for k, v in net_state_dict.items():
-                if k.replace('module.', '') in unsed:
-                    pass
-                else:
-                    new_state_dict[k.replace('module.', '')] = v
-            #net.load_state_dict(pruned_checkpoint)
-            net.load_state_dict(new_state_dict)
-            '''
-            best_prec, last_epoch = load_checkpoint(
-                ckpt_file_name, net, optimizer=optimizer)
-            '''
-
-    #device_ids=[0,1]
-
-    net = net.cuda()
-    #net = torch.nn.DataParallel(net, device_ids=device_ids)
-
 
     # load training data, do data augmentation and get data loader
     transform_train = transforms.Compose(
@@ -809,10 +734,10 @@ def main():
     hook_flag = True
     #config.ratio = config.rate #(config.epochs - epoch) / config.epochs
 
-    optimizer = torch.optim.SGD(net.parameters(), lr=0.02, momentum=0.9, weight_decay=5e-4)
+    optimizer = torch.optim.SGD(net.parameters(), lr=0.01, momentum=0.9, weight_decay=5e-4)
 
-    if hook_flag and False:
-        hook_layers_resnet110(net, my_ratio=config.ratio)
+    if hook_flag:
+        hook_layers_vgg16(net, my_ratio=config.ratio)
 
     for epoch in range(last_epoch + 1, config.epochs):
         lr = adjust_learning_rate(optimizer, epoch, config)
@@ -870,7 +795,6 @@ def main():
         if epoch == 0 or (
                 epoch + 1) % config.eval_freq == 0 or epoch == config.epochs - 1:
             test(test_loader, net, criterion, optimizer, epoch, device, last_cut=last_cut, hook_flag=hook_flag)
-        torch.cuda.empty_cache()
     writer.close()
     logger.info(
         "======== Training Finished.   best_test_acc: {:.3f}% ========".format(best_prec))

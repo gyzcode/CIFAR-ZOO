@@ -1,17 +1,21 @@
 # -*-coding:utf-8-*-
-from .alexnet import *
-from .cbam_resnext import *
-from .densenet import *
-from .genet import *
 from .lenet import *
-from .preresnet import *
+from .alexnet import *
+from .vgg import *
 from .resnet import *
-from .resnext import *
+from .preresnet import *
 from .senet import *
+from .resnext import *
+from .densenet import *
 from .shake_shake import *
 from .sknet import *
-from .vgg import *
+from .genet import *
+from .cbam_resnext import *
+from .vgg_hrank import *
+from .resnet_cifar import *
+from .resnet_imagenet import *
+
 
 
 def get_model(config):
-    return globals()[config.architecture](config.num_classes)
+    return globals()[config.architecture](config.num_classes, config.rate, config.ratio)

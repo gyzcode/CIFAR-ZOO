@@ -2,7 +2,8 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
-__all__ = ["lenet"]
+
+__all__ = ['lenet']
 
 
 class LeNet(nn.Module):

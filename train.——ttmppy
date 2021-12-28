@@ -497,6 +497,7 @@ def train(train_loader, net, criterion, optimizer, epoch, device, cut_ratio=0.8,
     net.train()
 
     train_loss = 0
+    total_div_loss = 0
     correct = 0
     total = 0
     logger.info(" === Epoch: [{}/{}] === ".format(epoch + 1, config.epochs))
@@ -510,28 +511,35 @@ def train(train_loader, net, criterion, optimizer, epoch, device, cut_ratio=0.8,
                 inputs, targets, config.mixup_alpha, device)
 
             epm = np.exp( min( (epoch+batch_index/loader_length) * 3., 10 ) )
-            #ddecay = torch.pow(mydecay, epm)
+            ddecay = torch.pow(mydecay, epm)
 
             outputs = net(inputs, epoch=epoch-last_cut, batch_ind=batch_index/loader_length)
             loss = mixup_criterion(
                 criterion, outputs, targets_a, targets_b, lam)
         else:
             epm = np.exp( min( (epoch+batch_index/loader_length) * 5., 15 ) )
-            global ddecay
             ddecay = torch.pow(mydecay, epm) * 0.0
             #print(ddecay, "JJJJJJJJJ")
             outputs = net(inputs, epoch=epoch-last_cut, batch_ind=batch_index/loader_length, hook_flag=hook_flag)
+            div_loss = div_weight(net)
             loss = criterion(outputs, targets)
+            '''
+            if epoch < 15:
+                loss = criterion(outputs, targets)
+            else:
+                loss = criterion(outputs, targets) + div_loss*5e-2
+            '''
 
         # zero the gradient buffers
         optimizer.zero_grad()
-        # backward
+        # backwards
         loss.backward()
         #nn.utils.clip_grad_norm(net.parameters(), .1, norm_type=2)
         optimizer.step()
 
         # count the loss and acc
         train_loss += loss.item()
+        total_div_loss += div_loss.item()*5e-2
         _, predicted = outputs.max(1)
         total += targets.size(0)
         if config.mixup:
@@ -541,13 +549,13 @@ def train(train_loader, net, criterion, optimizer, epoch, device, cut_ratio=0.8,
             correct += predicted.eq(targets).sum().item()
 
         if (batch_index + 1) % 100 == 0:
-            logger.info("   == step: [{:3}/{}], train loss: {:.3f} | train acc: {:6.3f}% | lr: {:.6f}".format(
+            logger.info("   == step: [{:3}/{}], train loss: {:.3f} div loss: {:.5f} | train acc: {:6.3f}% | lr: {:.6f}".format(
                 batch_index + 1, len(train_loader),
-                train_loss / (batch_index + 1), 100.0 * correct / total, get_current_lr(optimizer)))
+                train_loss / (batch_index + 1), total_div_loss / (batch_index + 1), 100.0 * correct / total, get_current_lr(optimizer)))
 
-    logger.info("   == step: [{:3}/{}], train loss: {:.3f} | train acc: {:6.3f}% | lr: {:.6f}".format(
+    logger.info("   == step: [{:3}/{}], train loss: {:.3f}  div loss: {:.5f} | train acc: {:6.3f}% | lr: {:.6f}".format(
         batch_index + 1, len(train_loader),
-        train_loss / (batch_index + 1), 100.0 * correct / total, get_current_lr(optimizer)))
+        train_loss / (batch_index + 1), total_div_loss / (batch_index + 1), 100.0 * correct / total, get_current_lr(optimizer)))
 
     end = time.time()
     logger.info("   == cost time: {:.4f}s".format(end - start))
@@ -573,7 +581,7 @@ def test(test_loader, net, criterion, optimizer, epoch, device, last_cut=0, hook
     with torch.no_grad():
         for batch_index, (inputs, targets) in enumerate(test_loader):
             inputs, targets = inputs.to(device), targets.to(device)
-            outputs = net(inputs, epoch-last_cut, .95, hook_flag, True)
+            outputs = net(inputs, epoch-last_cut, .95, hook_flag)
             loss = criterion(outputs, targets)
 
             test_loss += loss.item()
@@ -600,29 +608,37 @@ def test(test_loader, net, criterion, optimizer, epoch, device, last_cut=0, hook
     if is_best:
         best_prec = acc
 
+
 cut_ratio = []
 total_para = 0
 total_flops = 0
 tpara = 0
 tflops = 0
 
+def div_weight(net):
+    sm_loss = 0.0
+    kk = 0
+    for name, item in net.named_parameters():
+        if item.dim() > 1:
+            tmp_weight = item.view(item.size(0), -1)
+            tmp_weight = tmp_weight[0:int(item.size(0)*cut_ratio[kk]), :]
+            weight_norm = torch.norm(tmp_weight, p=2, dim=1, keepdim=True)
+            sim_score = torch.matmul(tmp_weight, tmp_weight.t()) / torch.matmul(weight_norm, weight_norm.t())
+            if item.dim() > 2:
+                sm_loss += torch.mean( torch.abs(sim_score) )
+            kk += 1
 
-def prior(net, layers, ratio=0.8):
-    layer_num = 0
-    for name1, item1 in net.named_parameters():
-         if item1.dim() > 1:
-             layer_num += 1
-             rr = ratio * (1.0 - 1 * math.pow((layer_num-layers/1.5)/layers, 2 ))
-             cut_ratio.append(rr)
+    sm_loss /= kk
 
-            
+    return sm_loss
+
 
 def norm_pca(net):
     global total_para
     global total_flops
     global tpara
     global tflops
-    pca = PCA(.9)
+    pca = PCA(.85)
     for name1, item1 in net.named_parameters():
          if item1.dim() > 1:
              weight = item1.view(item1.size(0), -1)
@@ -656,8 +672,8 @@ def main():
     #config.rate = [1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1. ]
     #config.ratio = list(1.0-np.power(np.array([0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, .4, .2]), 1.0/1) )
 
-    config.rate = list( np.ones((156)) )
-    config.ratio = list(1.0 - np.ones((156)) * 0.36 )
+    config.rate = list( np.ones((155)) )
+    config.ratio = list(1.0 - np.ones((150))*0.2 )
     #config.ratio = list(1.0 - np.power(np.array([0.1, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.0, 0.0, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.4, 0.4, 0.4, 0.1, 0.4, 0.1, 0.4, 0.1, 0.4, 0.1, 0.4]), 1.0/1) )
     #config.rate = list( np.ones((109)) )
     #config.ratio = list( 1.0 - np.array([0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.2]) )
@@ -668,7 +684,7 @@ def main():
     net = get_model(config)
 
     logger.info(net)
-    logger.info(" == total parameters: " + str(count_parameters(net)))
+    #logger.info(" == total parameters: " + str(count_parametesrs(net)))
 
     # CPU or GPU
     device = 'cuda' if config.use_gpu else 'cpu'
@@ -721,19 +737,14 @@ def main():
     net = net.cuda()
     #net = torch.nn.DataParallel(net, device_ids=device_ids)
 
-    #norm_pca(net)
+    norm_pca(net)
+    print(tpara / total_para, tflops / total_flops, "OOOOOOOOOOOOOOOOOOOOOOOO")
+    config.ratio = cut_ratio
 
-    #prior(net,110, 0.7)
-    #print(tpara / total_para, tflops / total_flops, "OOOOOOOOOOOOOOOOOOOOOOOO")
-
-    #config.ratio = cut_ratio
-    for rr in config.ratio:
-        print("["+str(rr)+']+', end='')
-
-    #net = get_model(config)
+    net = get_model(config)
 
     #logger.info(net)
-    logger.info(" == total parameters: " + str(count_parameters(net)))
+    #logger.info(" == total parameters: " + str(count_parameters(net)))
 
     # CPU or GPU
     device = 'cuda' if config.use_gpu else 'cpu'
@@ -809,14 +820,16 @@ def main():
     hook_flag = True
     #config.ratio = config.rate #(config.epochs - epoch) / config.epochs
 
-    optimizer = torch.optim.SGD(net.parameters(), lr=0.02, momentum=0.9, weight_decay=5e-4)
+    optimizer = torch.optim.SGD(net.parameters(), lr=0.002, momentum=0.9, weight_decay=5e-3)
 
-    if hook_flag and False:
-        hook_layers_resnet110(net, my_ratio=config.ratio)
+    if hook_flag:
+        hook_layers_resnet110(net, my_ratio=cut_ratio)
 
     for epoch in range(last_epoch + 1, config.epochs):
         lr = adjust_learning_rate(optimizer, epoch, config)
         writer.add_scalar('learning_rate', lr, epoch)
+        if epoch in switch_point:
+            optimizer = torch.optim.SGD(net.parameters(), lr, weight_decay=5e-3)
         '''
         if epoch in switch_point:
             config.rate = np.array(config.rate) * np.array(config.ratio)
